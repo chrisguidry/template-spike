@@ -51,6 +51,12 @@ def template_pool(processes=PROCESSES) -> Generator[Pool, None, None]:
             _pool = None
 
 
+def _wait_for_new_pool(current_pool):
+    global _pool
+    while not _pool or _pool == current_pool:
+        time.sleep(0.1)
+
+
 _template_environment = ImmutableSandboxedEnvironment(
     undefined=ChainableUndefined,
 )
@@ -77,7 +83,8 @@ def _render_in_pool(template: str, context: dict[str, Any]) -> str:
             result = pool.apply_async(_render_unsafe, args=(template, context))
         except ValueError as e:
             if "Pool not running" in str(e):
-                time.sleep(1)
+                # This means another thread is recreating the pool, wait for it
+                _wait_for_new_pool(pool)
                 return _render_in_pool(template, context)
             raise
 
@@ -88,7 +95,8 @@ def _render_in_pool(template: str, context: dict[str, Any]) -> str:
                 pong = pool.apply_async(_ping)
             except ValueError as e:
                 if "Pool not running" in str(e):
-                    time.sleep(1)
+                    # This means another thread is recreating the pool, wait for it
+                    _wait_for_new_pool(pool)
                     return _render_in_pool(template, context)
                 raise
 
