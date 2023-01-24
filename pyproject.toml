@@ -1,0 +1,14 @@
+[tool.black]
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+
+[tool.pytest.ini_options]
+addopts = """
+    -n 4
+    --cov
+    --cov-branch
+    --cov-report=term-missing
+"""
+asyncio_mode = 'auto'

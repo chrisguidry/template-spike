@@ -1,0 +1,13 @@
+jinja2
+
+black
+flake8
+flake8-black
+pre-commit
+ipython
+isort
+mypy
+pytest
+pytest-asyncio
+pytest-xdist
+pytest-cov
