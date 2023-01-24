@@ -4,16 +4,34 @@ import time
 
 from user_templates import render_user_template, template_pool
 
-OUTSTANDING = 32
+OUTSTANDING = 128
 
 
-GOOD = "{{ i }} - good: {{ time }}"
-BAD = (
-    "{{ i }} - bad:  {{time}}"
+GOOD = (
+    "{{ i }} - good: {{ time }}"
+    "{% for i in range(100) %}"
+    "{% for j in range(100) %}"
+    "{% endfor %}"
+    "{% endfor %}"
+)
+BAD_CPU = (
+    "{{ i }} - bad_cpu:  {{time}}"
     "{% for i in range(1000) %}"
     "{% for j in range(1000) %}"
     "{% for k in range(1000) %}"
     "{% for l in range(1000) %}"
+    "{% endfor %}"
+    "{% endfor %}"
+    "{% endfor %}"
+    "{% endfor %}"
+)
+BAD_RAM = (
+    "{{ i }} - bad_ram:  {{time}}"
+    "{% for i in range(1000) %}"
+    "{% for j in range(1000) %}"
+    "{% for k in range(1000) %}"
+    "{% for l in range(1000) %}"
+    "hey there bud"
     "{% endfor %}"
     "{% endfor %}"
     "{% endfor %}"
@@ -29,7 +47,9 @@ async def run():
         while True:
             template = GOOD
             if random.random() < 0.01:
-                template = BAD
+                template = BAD_CPU
+            elif random.random() < 0.02:
+                template = BAD_RAM
 
             context = {"i": i, "time": time.time()}
 
@@ -38,7 +58,10 @@ async def run():
 
             if len(futures) > OUTSTANDING:
                 rendered = await futures.pop()
-                print(rendered)
+                if i % 100 == 0:
+                    print("Rendered", i, "templates")
+                if rendered.startswith("Rendering the template"):
+                    print(rendered)
 
 
 if __name__ == "__main__":

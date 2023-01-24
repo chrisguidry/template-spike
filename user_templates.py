@@ -3,6 +3,7 @@
 import asyncio
 import multiprocessing
 import resource
+import time
 from contextlib import contextmanager
 from multiprocessing.pool import Pool
 from typing import Any, Generator
@@ -17,6 +18,8 @@ jinja2.sandbox.MAX_RANGE = 1000
 
 CPU_TIME_LIMIT = 2
 TEMPLATE_TIMEOUT = float(CPU_TIME_LIMIT) + 0.5
+POOL_RESTART_ALLOWANCE = 5
+RENDERING_PROCESS_TIMEOUT = TEMPLATE_TIMEOUT + POOL_RESTART_ALLOWANCE
 MEMORY_LIMIT = 400_000_000
 PROCESSES = 4
 
@@ -63,10 +66,44 @@ def _render_unsafe(template: str, context: dict[str, Any]) -> str:
     return loaded.render(context)
 
 
+def _ping() -> str:
+    return "pong"
+
+
 def _render_in_pool(template: str, context: dict[str, Any]) -> str:
+    global _pool
     with template_pool() as pool:
-        result = pool.apply_async(_render_unsafe, args=(template, context))
-        return result.get(timeout=TEMPLATE_TIMEOUT)
+        try:
+            result = pool.apply_async(_render_unsafe, args=(template, context))
+        except ValueError as e:
+            if "Pool not running" in str(e):
+                time.sleep(1)
+                return _render_in_pool(template, context)
+            raise
+
+        try:
+            return result.get(timeout=TEMPLATE_TIMEOUT)
+        except multiprocessing.TimeoutError:
+            try:
+                pong = pool.apply_async(_ping)
+            except ValueError as e:
+                if "Pool not running" in str(e):
+                    time.sleep(1)
+                    return _render_in_pool(template, context)
+                raise
+
+            try:
+                assert pong.get(timeout=TEMPLATE_TIMEOUT) == "pong"
+            except (AssertionError, multiprocessing.TimeoutError):
+                pool.__exit__(None, None, None)
+                _pool = Pool(
+                    processes=PROCESSES, maxtasksperchild=1, initializer=set_limits
+                )
+                _pool.__enter__()
+
+                return _render_in_pool(template, context)
+            else:
+                raise
 
 
 def validate_user_template(template: str):
@@ -83,7 +120,7 @@ async def render_user_template(template: str, context: dict[str, Any]) -> str:
     loop = asyncio.get_running_loop()
     future = loop.run_in_executor(None, renderer, template, context)
     try:
-        rendered = await asyncio.wait_for(future, timeout=TEMPLATE_TIMEOUT)
+        rendered = await asyncio.wait_for(future, timeout=RENDERING_PROCESS_TIMEOUT)
         return rendered
     except TimeoutError:
         return (
