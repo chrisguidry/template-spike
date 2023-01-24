@@ -61,7 +61,8 @@ async def run():
                 if i % 100 == 0:
                     print("Rendered", i, "templates")
                 if rendered.startswith("Rendering the template"):
-                    print(rendered)
+                    if "bad_cpu" not in rendered and "bad_ram" not in rendered:
+                        print(rendered)
 
 
 if __name__ == "__main__":

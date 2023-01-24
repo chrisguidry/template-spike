@@ -51,10 +51,17 @@ def template_pool(processes=PROCESSES) -> Generator[Pool, None, None]:
             _pool = None
 
 
-def _wait_for_new_pool(current_pool):
+def _wait_for_new_pool(current_pool: Pool):
     global _pool
     while not _pool or _pool == current_pool:
         time.sleep(0.1)
+
+
+def _recreate_pool(current_pool: Pool):
+    global _pool
+    current_pool.__exit__(None, None, None)
+    _pool = Pool(processes=PROCESSES, maxtasksperchild=1, initializer=set_limits)
+    _pool.__enter__()
 
 
 _template_environment = ImmutableSandboxedEnvironment(
@@ -77,7 +84,6 @@ def _ping() -> str:
 
 
 def _render_in_pool(template: str, context: dict[str, Any]) -> str:
-    global _pool
     with template_pool() as pool:
         try:
             result = pool.apply_async(_render_unsafe, args=(template, context))
@@ -103,14 +109,11 @@ def _render_in_pool(template: str, context: dict[str, Any]) -> str:
             try:
                 assert pong.get(timeout=TEMPLATE_TIMEOUT) == "pong"
             except (AssertionError, multiprocessing.TimeoutError):
-                pool.__exit__(None, None, None)
-                _pool = Pool(
-                    processes=PROCESSES, maxtasksperchild=1, initializer=set_limits
-                )
-                _pool.__enter__()
-
+                # The pool itself is sus, so recreate it and retry
+                _recreate_pool(pool)
                 return _render_in_pool(template, context)
             else:
+                # There's nothing wrong with the pool, this is a legit bad template
                 raise
 
 
